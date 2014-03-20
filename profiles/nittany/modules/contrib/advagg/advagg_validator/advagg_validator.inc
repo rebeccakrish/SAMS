@@ -44,12 +44,13 @@ function advagg_validator_test_all_css($options = array()) {
  *
  * @param string $ext
  *   Usually css or js.
+ *
  * @return array
  *   An array of files.
  */
 function advagg_validator_scan_all_dirs($ext) {
   $options = array(
-    'nodirmask' => '/(\.git|.*\/files*)/'
+    'nodirmask' => '/(\.git|.*\/files*)/',
   );
   $output = advagg_validator_file_scan_directory(DRUPAL_ROOT, '/.*\.' . $ext . '$/', $options);
   $files = array();
@@ -68,6 +69,11 @@ function advagg_validator_scan_all_dirs($ext) {
 function advagg_validator_test_css_files($files, $options = array()) {
   $output = array();
   foreach ($files as $filename) {
+    // Skip missing files.
+    if (!file_exists($filename)) {
+      continue;
+    }
+
     $file_contents = file_get_contents($filename);
     $lines = file($filename);
     $filename_hash = drupal_hash_base64($filename);
@@ -98,14 +104,20 @@ function advagg_validator_test_css_files($files, $options = array()) {
     if (!empty($output[$filename]['jigsaw.w3.org']['errors'])) {
       foreach ($output[$filename]['jigsaw.w3.org']['errors'] as $key => &$value) {
         if (isset($value['line'])) {
-          $value['linedata'] = $lines[($value['line']-1)];
+          $value['linedata'] = $lines[($value['line'] - 1)];
+          if (strlen($value['linedata']) > 512) {
+            unset($value['linedata']);
+          }
         }
       }
     }
     if (!empty($output[$filename]['jigsaw.w3.org']['warnings'])) {
       foreach ($output[$filename]['jigsaw.w3.org']['warnings'] as $key => &$value) {
         if (isset($value['line'])) {
-          $value['linedata'] = $lines[$value['line']-1];
+          $value['linedata'] = $lines[$value['line'] - 1];
+          if (strlen($value['linedata']) > 512) {
+            unset($value['linedata']);
+          }
         }
       }
     }
@@ -134,32 +146,17 @@ function advagg_validator_test_css_files($files, $options = array()) {
  * Given a CSS file, test to make sure it is valid CSS.
  *
  * @param string $filename
- *    The name of the file.
+ *   The name of the file.
  * @param array $validator_options
- *    List of options to pass along to the CSS Validator.
+ *   List of options to pass along to the CSS Validator.
  *
  * @return array
+ *   Info from the w3c server.
  */
 function advagg_validator_test_css_file_w3c($filename, &$validator_options = array()) {
-  // Get public URL for file.
-  $test_url = file_create_url($filename);
-  $parse = @parse_url($test_url);
+  // Get CSS files contents.
+  $validator_options['text'] = file_get_contents($filename);
 
-  if (ip2long($parse['host']) !== FALSE) {
-    $ip = $parse['host'];
-  }
-  else {
-    $ip = gethostbyname($parse['host']);
-    if (ip2long($ip) === FALSE) {
-      return array('error' => t('Can not get IP Address (@ip) from @host.', array('@ip' => $ip, '@host' => $parse['host'])));
-    }
-  }
-  if (advagg_validator_reserved_ip($ip)) {
-    return array('error' => t('IP Address @ip for @host is not externally routable.', array('@ip' => $ip, '@host' => $parse['host'])));;
-  }
-
-  // Set uri.
-  $validator_options['uri'] = $test_url;
   // Add in defaults.
   $validator_options += array(
     'output' => 'soap12',
@@ -180,7 +177,10 @@ function advagg_validator_test_css_file_w3c($filename, &$validator_options = arr
   if (!empty($result->data) && $result->code == 200) {
     // Parse XML & return info.
     $return = advagg_validator_parse_soap_response_w3c($result->data);
-    $return['url'] = $url;
+    $return['filename'] = $filename;
+    if (isset($validator_options['text'])) {
+      unset($validator_options['text']);
+    }
     $return['options'] = $validator_options;
     return $return;
   }
@@ -193,18 +193,19 @@ function advagg_validator_test_css_file_w3c($filename, &$validator_options = arr
  *
  * This function parses a SOAP 1.2 response XML string from the validator.
  *
- * @param string $XML
- *    The raw SOAP 1.2 XML response from the validator.
+ * @param string $xml
+ *   The raw SOAP 1.2 XML response from the validator.
  *
  * @return array
+ *   Info from the w3c server.
  */
-function advagg_validator_parse_soap_response_w3c($XML) {
+function advagg_validator_parse_soap_response_w3c($xml) {
   $doc = new DOMDocument();
   $response = array();
 
   // Try to load soap 1.2 XML response, and suppress warning reports if any.
-  if (!@$doc->loadXML($XML)) {
-    // Could not load the XML document
+  if (!@$doc->loadXML($xml)) {
+    // Could not load the XML document.
     return $response;
   }
 
@@ -240,6 +241,15 @@ function advagg_validator_parse_soap_response_w3c($XML) {
   return $response;
 }
 
+/**
+ * Extract info from the DOMNode Object.
+ *
+ * @param object $dom
+ *   DOMNode Class
+ *
+ * @return array
+ *   Key Value pair from the DOM Node.
+ */
 function advagg_validator_dom_extractor($dom) {
   $node = $dom->firstChild;
   $output = array();
@@ -260,11 +270,11 @@ function advagg_validator_dom_extractor($dom) {
  * prevents hidden files and directories (such as SVN working directories)
  * from being scanned.
  *
- * @param $dir
+ * @param string $dir
  *   The base directory or URI to scan, without trailing slash.
- * @param $mask
+ * @param string $mask
  *   The preg_match() regular expression of the files to find.
- * @param $options
+ * @param array $options
  *   An associative array of additional options, with the following elements:
  *   - 'nomask': The preg_match() regular expression of the files to ignore.
  *     Defaults to '/(\.\.?|CVS)$/'.
@@ -280,11 +290,11 @@ function advagg_validator_dom_extractor($dom) {
  *     extension. Defaults to 'uri'.
  *   - 'min_depth': Minimum depth of directories to return files from. Defaults
  *     to 0.
- * @param $depth
+ * @param int $depth
  *   Current depth of recursion. This parameter is only used internally and
  *   should not be passed in.
  *
- * @return
+ * @return array
  *   An associative array (keyed on the chosen key) of objects with 'uri',
  *   'filename', and 'name' members corresponding to the matching files.
  */
@@ -301,13 +311,15 @@ function advagg_validator_file_scan_directory($dir, $mask, $options = array(), $
 
   $options['key'] = in_array($options['key'], array('uri', 'filename', 'name')) ? $options['key'] : 'uri';
   $files = array();
+  // @ignore druplart_andor_assignment
   if (is_dir($dir) && $handle = opendir($dir)) {
     while (FALSE !== ($filename = readdir($handle))) {
       if (!preg_match($options['nomask'], $filename) && $filename[0] != '.') {
         $uri = "$dir/$filename";
         $uri = file_stream_wrapper_uri_normalize($uri);
         if (is_dir($uri) && $options['recurse'] && !preg_match($options['nodirmask'], $uri)) {
-          // Give priority to files in this folder by merging them in after any subdirectory files.
+          // Give priority to files in this folder by merging them in after any
+          // subdirectory files.
           $files = array_merge(advagg_validator_file_scan_directory($uri, $mask, $options, $depth + 1), $files);
         }
         elseif ($depth >= $options['min_depth'] && preg_match($mask, $filename)) {
@@ -330,41 +342,4 @@ function advagg_validator_file_scan_directory($dir, $mask, $options = array(), $
   }
 
   return $files;
-}
-
-/**
- * Returns TRUE if the IP is a reserved one.
- *
- * @see http://stackoverflow.com/questions/14125735/how-to-know-if-an-ip-is-external-or-not/14125871#14125871
- * @see http://en.wikipedia.org/wiki/Reserved_IP_addresses
- *
- * @param $ip
- *   IP address string.
- * @return
- *   TRUE or FALSE.
- */
-function advagg_validator_reserved_ip($ip) {
-  $ip_long = sprintf('%u', ip2long($ip));
-
-  $reserved_ips = array(
-    '0'          => '16777215',   // 000.000.000.000 - 000.255.255.255
-    '167772160'  => '184549375',  // 100.000.000.000 - 010.255.255.255
-    '1681915904' => '1686110207', // 100.064.000.000 - 100.127.255.255
-    '2130706432' => '2147483647', // 127.000.000.000 - 127.255.255.255
-    '2851995648' => '2852061183', // 169.254.000.000 - 169.254.255.255
-    '2886729728' => '2887778303', // 172.016.000.000 - 172.031.255.255
-    '3221225472' => '3221225479', // 192.000.000.000 - 192.000.000.007
-    '3221225984' => '3221226239', // 192.000.002.000 - 192.000.002.255
-    '3232235520' => '3232301055', // 192.168.000.000 - 192.168.255.255
-    '3323068416' => '3323199487', // 198.018.000.000 - 198.019.255.255
-    '3325256704' => '3325256959', // 198.051.100.000 - 198.051.100.255
-    '3405803776' => '3405804031', // 203.000.113.000 - 203.000.113.255
-    '3758096384' => '4026531839', // 224.000.000.000 - 239.255.255.255
-  );
-  foreach ($reserved_ips as $ip_start => $ip_end) {
-    if (($ip_long >= $ip_start) && ($ip_long <= $ip_end)) {
-      return TRUE;
-    }
-  }
-  return FALSE;
 }

@@ -538,9 +538,9 @@ settings[info][preview_css] = 'color/preview.css'
 settings[info][preview_js] = 'color/preview.js'
 settings[info][preview_html] = 'color/preview.html'
 settings[info][base_image] = 'color/base.png'
-; Information added by drupal.org packaging script on 2013-10-29
-version = "7.x-1.0+0-dev"
+; Information added by drupal.org packaging script on 2013-10-28
+version = "7.x-1.0"
 core = "7.x"
 project = "chamfer"
-datestamp = "1383006517"
+datestamp = "1382987127"
 

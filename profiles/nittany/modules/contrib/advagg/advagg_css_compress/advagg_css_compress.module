@@ -3,7 +3,6 @@
 /**
  * @file
  * Advanced aggregation css compression module.
- *
  */
 
 /**
@@ -22,10 +21,14 @@ define('ADVAGG_CSS_INLINE_COMPRESSOR', 0);
 define('ADVAGG_CSS_INLINE_COMPRESS_IF_NOT_CACHEABLE', FALSE);
 
 /**
- * Implementation of hook_menu
+ * Default value for per file compression settings.
+ */
+define('ADVAGG_CSS_COMPRESSOR_FILE_SETTINGS', -1);
+
+/**
+ * Implements hook_menu().
  */
 function advagg_css_compress_menu() {
-  $items = array();
   $file_path = drupal_get_path('module', 'advagg_css_compress');
   $config_path = advagg_admin_config_root_path();
 
@@ -45,14 +48,15 @@ function advagg_css_compress_menu() {
 }
 
 /**
- * Implement hook_advagg_current_hooks_hash_array_alter.
+ * Implements hook_advagg_current_hooks_hash_array_alter().
  */
 function advagg_css_compress_advagg_current_hooks_hash_array_alter(&$aggregate_settings) {
   $aggregate_settings['variables']['advagg_css_compressor'] = variable_get('advagg_css_compressor', ADVAGG_CSS_COMPRESSOR);
+  $aggregate_settings['variables']['advagg_css_compressor_file_settings'] = variable_get('advagg_css_compressor_file_settings', array());
 }
 
 /**
- * Implement hook_advagg_modify_css_pre_render_alter().
+ * Implements hook_advagg_modify_css_pre_render_alter().
  *
  * Used to compress inline css.
  */

@@ -27,24 +27,58 @@ define('ADVAGG_MOD_JS_DEFER', FALSE);
 define('ADVAGG_MOD_JS_ASYNC_SHIM', TRUE);
 
 /**
+ * Default value to remove JavaScript if none was added on the page.
+ */
+define('ADVAGG_MOD_JS_REMOVE_UNUSED', FALSE);
+
+/**
  * Default value to turn on preprocessing for all CSS files.
  */
 define('ADVAGG_MOD_CSS_PREPROCESS', FALSE);
 
 /**
- * Default value to remove JavaScript if none was added on the page.
+ * Default value to translate the content attributes of CSS files.
  */
-define('ADVAGG_MOD_JS_REMOVE_UNUSED', FALSE);
+define('ADVAGG_MOD_CSS_TRANSLATE', FALSE);
 
+/**
+ * Default value to adjust the sorting of external JavaScript.
+ */
+define('ADVAGG_MOD_JS_ADJUST_SORT_EXTERNAL', FALSE);
+
+/**
+ * Default value to adjust the sorting of inline JavaScript.
+ */
+define('ADVAGG_MOD_JS_ADJUST_SORT_INLINE', FALSE);
+
+/**
+ * Default value to adjust the sorting of browser conditional JavaScript.
+ */
+define('ADVAGG_MOD_JS_ADJUST_SORT_BROWSERS', FALSE);
+
+/**
+ * Default value to adjust the sorting of external CSS.
+ */
+define('ADVAGG_MOD_CSS_ADJUST_SORT_EXTERNAL', FALSE);
+
+/**
+ * Default value to adjust the sorting of inline CSS.
+ */
+define('ADVAGG_MOD_CSS_ADJUST_SORT_INLINE', FALSE);
+
+/**
+ * Default value to adjust the sorting of browser conditional CSS.
+ */
+define('ADVAGG_MOD_CSS_ADJUST_SORT_BROWSERS', FALSE);
 
 // Core hook implementations.
 /**
- * Implement hook_init().
+ * Implements hook_init().
  */
 function advagg_mod_init() {
   // Return if unified_multisite_dir is not set.
   $dir = rtrim(variable_get('advagg_mod_unified_multisite_dir', ''), '/');
-  if (empty($dir) || !file_exists($dir) || !is_dir($dir)){
+  if (empty($dir) || !file_exists($dir) || !is_dir($dir)) {
     return;
   }
 
@@ -76,10 +110,9 @@ function advagg_mod_init() {
 }
 
 /**
- * Implement hook_menu().
+ * Implements hook_menu().
  */
 function advagg_mod_menu() {
-  $items = array();
   $file_path = drupal_get_path('module', 'advagg_mod');
   $config_path = advagg_admin_config_root_path();
 
@@ -111,6 +144,15 @@ function advagg_mod_js_alter(&$js) {
     advagg_remove_js_if_not_used($js);
   }
 
+  // @ignore sniffer_whitespace_openbracketspacing_openingwhitespace:5
+  // Change sort order so aggregates do not get split up.
+  if (   variable_get('advagg_mod_js_adjust_sort_external', ADVAGG_MOD_JS_ADJUST_SORT_EXTERNAL)
+      || variable_get('advagg_mod_js_adjust_sort_inline', ADVAGG_MOD_JS_ADJUST_SORT_INLINE)
+      || variable_get('advagg_mod_js_adjust_sort_browsers', ADVAGG_MOD_JS_ADJUST_SORT_BROWSERS)
+      ) {
+    advagg_mod_sort_css_js($js, 'js');
+  }
+
   // Move all JS to the footer.
   $move_js_to_footer = variable_get('advagg_mod_js_footer', ADVAGG_MOD_JS_FOOTER);
   if (!empty($move_js_to_footer)) {
@@ -118,13 +160,13 @@ function advagg_mod_js_alter(&$js) {
       if ($move_js_to_footer == 1 && $values['group'] <= JS_LIBRARY) {
         continue;
       }
-      // If JS is not in the header increase group by 1000.
+      // If JS is not in the header increase group by 10000.
       if ($values['scope'] != 'header') {
-        $values['group'] += 1000;
+        $values['group'] += 10000;
       }
-      // If JS is already in the footer increase group by 1000.
+      // If JS is already in the footer increase group by 10000.
       if ($values['scope'] == 'footer') {
-        $values['group'] += 1000;
+        $values['group'] += 10000;
       }
       $values['scope'] = 'footer';
     }
@@ -150,7 +192,7 @@ function advagg_mod_js_alter(&$js) {
       // Everything is defer.
       $values['defer'] = TRUE;
 
-      if (strpos($name, 'jquery.js') !== FALSE || strpos($name, 'jquery.min.js') !== FALSE ) {
+      if (strpos($name, 'jquery.js') !== FALSE || strpos($name, 'jquery.min.js') !== FALSE) {
         // Do not defer the loading of jquery.js
         $values['defer'] = FALSE;
 
@@ -159,7 +201,7 @@ function advagg_mod_js_alter(&$js) {
           $values['onload'] = "if (typeof window.init_drupal_jquery_update_fallback === 'function') {init_drupal_jquery_update_fallback();}";
         }
       }
-      if (strpos($name, 'jquery-ui.js') !== FALSE || strpos($name, 'jquery-ui.min.js') !== FALSE ) {
+      if (strpos($name, 'jquery-ui.js') !== FALSE || strpos($name, 'jquery-ui.min.js') !== FALSE) {
         // Do not defer the loading of jquery-ui.js
         $values['defer'] = FALSE;
 
@@ -179,11 +221,252 @@ function advagg_mod_js_alter(&$js) {
 }
 
 /**
+ * Rearrange CSS/JS so that aggregates are better grouped.
+ *
+ * This can move all external assets to the top, thus in one group.
+ * This can move all inline assets to the bottom, thus in one group.
+ * This can move all browser conditional assets together.
+ *
+ * @param array $array
+ *   The CSS or JS array.
+ * @param string $type
+ *   css or js.
+ */
+function advagg_mod_sort_css_js(&$array, $type) {
+  // @ignore sniffer_whitespace_openbracketspacing_openingwhitespace:3
+  if (   ($type == 'js' && variable_get('advagg_mod_js_adjust_sort_external', ADVAGG_MOD_JS_ADJUST_SORT_EXTERNAL))
+      || ($type == 'css' && variable_get('advagg_mod_css_adjust_sort_external', ADVAGG_MOD_CSS_ADJUST_SORT_EXTERNAL))
+      ) {
+    // Find all external items.
+    $external = array();
+    $group = NULL;
+    $every_page = NULL;
+    $weight = NULL;
+    foreach ($array as $key => $value) {
+      // Set values if not set.
+      if (is_null($group)) {
+        $group = $value['group'];
+      }
+      if (is_null($every_page)) {
+        $every_page = $value['every_page'];
+      }
+      if (is_null($weight)) {
+        $weight = $value['weight'];
+      }
+
+      // Find "lightest" item.
+      if ($value['group'] < $group) {
+        $group = $value['group'];
+      }
+      if ($value['every_page'] && !$every_page) {
+        $every_page = $value['every_page'];
+      }
+      if ($value['weight'] < $weight) {
+        $weight = $value['weight'];
+      }
+
+      if (!empty($value['type']) && $value['type'] == 'external') {
+        $external[$key] = $value;
+        unset($array[$key]);
+      }
+
+      if (!empty($value['type']) && $value['type'] == 'inline') {
+        // Move jQuery fallback as well.
+        if (strpos($value['data'], 'window.jQuery') === 0) {
+          $external[$key] = $value;
+          unset($array[$key]);
+        }
+        // Move jQuery ui fallback as well.
+        if (strpos($value['data'], 'window.jQuery.ui') === 0) {
+          $external[$key] = $value;
+          unset($array[$key]);
+        }
+      }
+    }
+    // Sort the array so that it appears in the correct order.
+    if (is_callable('drupal_sort_css_js')) {
+      uasort($external, 'drupal_sort_css_js');
+    }
+    else {
+      advagg_drupal_sort_css_js_stable($external);
+    }
+
+    // Group all external together.
+    $offset = 0.0001;
+    $weight += -1;
+    foreach ($external as $key => $value) {
+      if (isset($value['moveable']) && empty($value['moveable'])) {
+        $array[$key] = $value;
+        continue;
+      }
+      $value['group'] = $group;
+      $value['every_page'] = $every_page;
+      $value['weight'] = $weight;
+      $weight += $offset;
+      $array[$key] = $value;
+    }
+  }
+
+  // @ignore sniffer_whitespace_openbracketspacing_openingwhitespace:3
+  if (   ($type == 'js' && variable_get('advagg_mod_js_adjust_sort_inline', ADVAGG_MOD_JS_ADJUST_SORT_INLINE))
+      || ($type == 'css' && variable_get('advagg_mod_css_adjust_sort_inline', ADVAGG_MOD_CSS_ADJUST_SORT_INLINE))
+      ) {
+    // Find all inline items.
+    $inline = array();
+    $group = NULL;
+    $every_page = NULL;
+    $weight = NULL;
+    foreach ($array as $key => $value) {
+      // Set values if not set.
+      if (is_null($group)) {
+        $group = $value['group'];
+      }
+      if (is_null($every_page)) {
+        $every_page = $value['every_page'];
+      }
+      if (is_null($weight)) {
+        $weight = $value['weight'];
+      }
+
+      // Find "heaviest" item.
+      if ($value['group'] > $group) {
+        $group = $value['group'];
+      }
+      if (!$value['every_page'] && $every_page) {
+        $every_page = $value['every_page'];
+      }
+      if ($value['weight'] > $weight) {
+        $weight = $value['weight'];
+      }
+
+      if (!empty($value['type']) && $value['type'] == 'inline') {
+        // Do not move jQuery fallback.
+        if (strpos($value['data'], 'window.jQuery') === 0) {
+          continue;
+        }
+        // Do not move jQuery.ui fallback.
+        if (strpos($value['data'], 'window.jQuery.ui') === 0) {
+          continue;
+        }
+        $inline[$key] = $value;
+        unset($array[$key]);
+      }
+    }
+    // Sort the array so that it appears in the correct order.
+    if (is_callable('drupal_sort_css_js')) {
+      uasort($inline, 'drupal_sort_css_js');
+    }
+    else {
+      advagg_drupal_sort_css_js_stable($inline);
+    }
+
+    // Group all inline together.
+    $offset = 0.0001;
+    $weight += 1;
+    foreach ($inline as $key => $value) {
+      if (isset($value['moveable']) && empty($value['moveable'])) {
+        $array[$key] = $value;
+        continue;
+      }
+      $value['group'] = $group;
+      $value['every_page'] = $every_page;
+      $value['weight'] = $weight;
+      $weight += $offset;
+      $array[$key] = $value;
+    }
+  }
+
+  // @ignore sniffer_whitespace_openbracketspacing_openingwhitespace:3
+  if (   ($type == 'js' && variable_get('advagg_mod_js_adjust_sort_browsers', ADVAGG_MOD_JS_ADJUST_SORT_BROWSERS))
+      || ($type == 'css' && variable_get('advagg_mod_css_adjust_sort_browsers', ADVAGG_MOD_CSS_ADJUST_SORT_BROWSERS))
+      ) {
+    // Get a list of browsers.
+    $browsers_list = array();
+    foreach ($array as $key => $value) {
+      if (isset($value['browsers']['IE']) && $value['browsers']['IE'] !== TRUE) {
+        $browsers_list['IE'][] = $value['browsers']['IE'];
+      }
+    }
+
+    // Group browsers CSS together.
+    if (isset($browsers_list['IE'])) {
+      $browsers_list['IE'] = array_values(array_unique($browsers_list['IE']));
+      foreach ($browsers_list['IE'] as $browser) {
+        $browsers = array();
+        $group = NULL;
+        $every_page = NULL;
+        $weight = NULL;
+        foreach ($array as $key => $value) {
+          if (isset($value['browsers']['IE']) && $browser === $value['browsers']['IE']) {
+            // Set values if not set.
+            if (is_null($group)) {
+              $group = $value['group'];
+            }
+            if (is_null($every_page)) {
+              $every_page = $value['every_page'];
+            }
+            if (is_null($weight)) {
+              $weight = $value['weight'];
+            }
+
+            // Find "heaviest" item.
+            if ($value['group'] > $group) {
+              $group = $value['group'];
+            }
+            if (!$value['every_page'] && $every_page) {
+              $every_page = $value['every_page'];
+            }
+            if ($value['weight'] > $weight) {
+              $weight = $value['weight'];
+            }
+
+            $browsers[$key] = $value;
+            unset($array[$key]);
+          }
+        }
+
+        // Sort the array so that it appears in the correct order.
+        if (is_callable('drupal_sort_css_js')) {
+          uasort($browsers, 'drupal_sort_css_js');
+        }
+        else {
+          advagg_drupal_sort_css_js_stable($browsers);
+        }
+
+
+        // Group all browsers together.
+        $offset = 0.0001;
+        foreach ($browsers as $key => $value) {
+          if (isset($value['moveable']) && empty($value['moveable'])) {
+            $array[$key] = $value;
+            continue;
+          }
+          $value['group'] = $group;
+          $value['every_page'] = $every_page;
+          $value['weight'] = $weight;
+          $weight += $offset;
+          $array[$key] = $value;
+        }
+      }
+    }
+  }
+}
+
+/**
  * Implements hook_css_alter().
  */
 function advagg_mod_css_alter(&$css) {
   if (module_exists('advagg') && !advagg_enabled()) {
     return;
+  }
+
+  // @ignore sniffer_whitespace_openbracketspacing_openingwhitespace:5
+  // Change sort order so aggregates do not get split up.
+  if (   variable_get('advagg_mod_css_adjust_sort_external', ADVAGG_MOD_CSS_ADJUST_SORT_EXTERNAL)
+      || variable_get('advagg_mod_css_adjust_sort_inline', ADVAGG_MOD_CSS_ADJUST_SORT_INLINE)
+      || variable_get('advagg_mod_css_adjust_sort_browsers', ADVAGG_MOD_CSS_ADJUST_SORT_BROWSERS)
+      ) {
+    advagg_mod_sort_css_js($css, 'css');
   }
 
   // Do not use preprocessing if CSS is inlined.
@@ -226,12 +509,12 @@ function advagg_mod_advagg_modify_js_pre_render_alter(&$children, &$elements) {
         unset($values['#attributes']['onload']);
       }
 
-      // Core
+      // Core.
       if (strpos($values['#value'], 'jQuery.extend(Drupal.settings') !== FALSE) {
         $values['#value'] = 'function init_drupal_core_settings() {' . $values['#value'] . '}';
       }
 
-      // jQuery Update
+      // JQuery Update.
       if (strpos($values['#value'], 'window.jQuery') !== FALSE) {
         $values['#value'] = 'function init_drupal_jquery_update_fallback() {' . $values['#value'] . '}';
       }
@@ -277,16 +560,32 @@ function advagg_mod_advagg_get_root_files_dir_alter(&$css_paths, &$js_paths) {
   file_prepare_directory($js_paths[0], FILE_CREATE_DIRECTORY);
 
   // Set the URI of the directory.
-  $css_paths[1] = parse_url(file_create_url($css_paths[0]));
-  $css_paths[1] = ltrim($css_paths[1]['path'], $GLOBALS['base_path']);
-  $js_paths[1] = parse_url(file_create_url($js_paths[0]));
-  $js_paths[1] = ltrim($js_paths[1]['path'], $GLOBALS['base_path']);
+  $css_paths[1] = parse_url(file_create_url($css_paths[0]), PHP_URL_PATH);
+  if (substr($css_paths[1], 0, strlen($GLOBALS['base_path'])) == $GLOBALS['base_path']) {
+    $css_paths[1] = substr($css_paths[1], strlen($GLOBALS['base_path']));
+  }
+  $js_paths[1] = parse_url(file_create_url($js_paths[0]), PHP_URL_PATH);
+  if (substr($js_paths[1], 0, strlen($GLOBALS['base_path'])) == $GLOBALS['base_path']) {
+    $js_paths[1] = substr($js_paths[1], strlen($GLOBALS['base_path']));
+  }
 }
 
+/**
+ * Implements hook_advagg_current_hooks_hash_array_alter().
+ */
+function advagg_mod_advagg_current_hooks_hash_array_alter(&$aggregate_settings) {
+  $aggregate_settings['variables']['advagg_mod_css_translate'] = variable_get('advagg_mod_css_translate', ADVAGG_MOD_CSS_TRANSLATE);
+  if (variable_get('advagg_mod_css_translate', ADVAGG_MOD_CSS_TRANSLATE)) {
+    $aggregate_settings['variables']['advagg_mod_css_translate_lang'] = isset($GLOBALS['language']->language) ? $GLOBALS['language']->language : 'en';
+  }
+}
 
 // Helper Functions.
 /**
  * Returns TRUE if this page should have inline CSS/JS.
+ *
+ * @return bool
+ *   TRUE or FALSE.
  */
 function advagg_mod_inline_page() {
   $visibility = variable_get('advagg_mod_inline_visibility', BLOCK_VISIBILITY_LISTED);
@@ -297,7 +596,7 @@ function advagg_mod_inline_page() {
 /**
  * Transforms all JS files into inline JS.
  *
- * @param $js
+ * @param array $js
  *   JS array.
  */
 function advagg_mod_inline_js(&$js) {
@@ -324,7 +623,7 @@ function advagg_mod_inline_js(&$js) {
 /**
  * Transforms all CSS files into inline CSS.
  *
- * @param $css
+ * @param array $css
  *   CSS array.
  *
  * @see advagg_get_css_aggregate_contents()
@@ -349,8 +648,9 @@ function advagg_mod_inline_css(&$css) {
       // Call hook_advagg_get_css_file_contents_alter().
       drupal_alter('advagg_get_css_file_contents', $contents, $file, $aggregate_settings);
 
-      // Per the W3C specification at http://www.w3.org/TR/REC-CSS2/cascade.html#at-import,
-      // @import rules must proceed any other style, so we move those to the top.
+      // Per the W3C specification at
+      // http://www.w3.org/TR/REC-CSS2/cascade.html#at-import, @import rules
+      // must proceed any other style, so we move those to the top.
       $regexp = '/@import[^;]+;/i';
       preg_match_all($regexp, $contents, $matches);
       $contents = preg_replace($regexp, '', $contents);
@@ -365,10 +665,13 @@ function advagg_mod_inline_css(&$css) {
 /**
  * Transforms all CSS files into inline CSS.
  *
- * @param $pages
+ * @param string $pages
  *   string from the advagg_mod_inline_pages variable.
- * @param $visibility
+ * @param int $visibility
  *   visibility setting from the advagg_mod_inline_visibility variable.
+ *
+ * @return bool
+ *   TRUE if the current path matches the given pages.
  *
  * @see block_block_list_alter()
  */
@@ -383,7 +686,7 @@ function advagg_mod_match_path($pages, $visibility) {
     // with different case. Ex: /Page, /page, /PAGE.
     $pages = drupal_strtolower($pages);
     if ($visibility < BLOCK_VISIBILITY_PHP) {
-      // Convert the Drupal path to lowercase
+      // Convert the Drupal path to lowercase.
       $path = drupal_strtolower(drupal_get_path_alias($_GET['q']));
       // Compare the lowercase internal and lowercase path alias (if any).
       $page_match = drupal_match_path($path, $pages);
@@ -413,10 +716,13 @@ function advagg_mod_match_path($pages, $visibility) {
 /**
  * See if JavaScript file contains drupal and/or jquery.
  *
- * @param $filename
+ * @param string $filename
  *   filename or full URL.
- * @param $type
+ * @param string $type
  *   file or external
+ *
+ * @return array
+ *   Returns an array stating if this JS file contains drupal or jquery.
  *
  * @see block_block_list_alter()
  */
@@ -477,7 +783,7 @@ function advagg_mod_js_contains_jquery_drupal($filename, $type) {
 /**
  * Remove JS if not in use on current page.
  *
- * @param $js
+ * @param array $js
  *   JS array.
  */
 function advagg_remove_js_if_not_used(&$js) {
@@ -567,7 +873,8 @@ function advagg_remove_js_if_not_used(&$js) {
   }
 }
 
-
+// @ignore sniffer_commenting_functioncomment_hookreturndoc:12
+// @ignore sniffer_commenting_functioncomment_hookparamdoc:8
 /**
  * Implements hook_magic().
  *
@@ -576,14 +883,14 @@ function advagg_remove_js_if_not_used(&$js) {
  * @param string $theme
  *   The theme that the settings will be editing.
  *
- * @return
+ * @return array
  *   The array of settings within the magic module theme page. Must not contain
  *   anything from the $magic_settings array.
  */
 function advagg_mod_magic($magic_settings, $theme) {
   $settings = array();
 
-  // If possible disable access and set defult to false.
+  // If possible disable access and set default to false.
   if (!isset($magic_settings['css']['magic_embedded_mqs']['#access'])) {
     $settings['css']['magic_embedded_mqs']['#access'] = FALSE;
   }
@@ -616,7 +923,7 @@ function advagg_mod_magic($magic_settings, $theme) {
 }
 
 /**
- * Form validation handler. Disable certian magic settings before being saved.
+ * Form validation handler. Disable certain magic settings before being saved.
  */
 function advagg_mod_magic_form_validate($form, &$form_state) {
   // Disable magic functionality if it is a duplicate of AdvAgg.

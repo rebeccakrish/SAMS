@@ -438,10 +438,8 @@ function hidden_nodes_outline_designer_hide_node($nid, $multiple, $status) {
         }
       }
     }
-    drupal_set_message(t('Content was marked hidden successfully'));
-    return 1;
+    return t('Content was marked hidden successfully');
   }
-  return 0;
 }
 
 /**
@@ -466,7 +464,6 @@ function hidden_nodes_action_info() {
 
 /**
  * Implements a Drupal action.
- *
  * Hides the current node.
  */
 function hidden_nodes_hide_action(&$node, $context) {
@@ -476,7 +473,6 @@ function hidden_nodes_hide_action(&$node, $context) {
 
 /**
  * Implements a Drupal action.
- *
  * Unhides the current node.
  */
 function hidden_nodes_unhide_action(&$node, $context) {

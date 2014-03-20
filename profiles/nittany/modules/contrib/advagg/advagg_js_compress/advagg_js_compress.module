@@ -36,10 +36,14 @@ define('ADVAGG_JS_COMPRESS_RATIO', 0.1);
 define('ADVAGG_JS_MAX_COMPRESS_RATIO', 0.9);
 
 /**
- * Implementation of hook_menu
+ * Default value for per file compression settings.
+ */
+define('ADVAGG_JS_COMPRESSOR_FILE_SETTINGS', -1);
+
+/**
+ * Implements hook_menu().
  */
 function advagg_js_compress_menu() {
-  $items = array();
   $file_path = drupal_get_path('module', 'advagg_js_compress');
   $config_path = advagg_admin_config_root_path();
 
@@ -59,16 +63,17 @@ function advagg_js_compress_menu() {
 }
 
 /**
- * Implement hook_advagg_current_hooks_hash_array_alter.
+ * Implements hook_advagg_current_hooks_hash_array_alter().
  */
 function advagg_js_compress_advagg_current_hooks_hash_array_alter(&$aggregate_settings) {
   $aggregate_settings['variables']['advagg_js_compressor'] = variable_get('advagg_js_compressor', ADVAGG_JS_COMPRESSOR);
   $aggregate_settings['variables']['advagg_js_compress_packer'] = variable_get('advagg_js_compress_packer', ADVAGG_JS_COMPRESS_PACKER);
   $aggregate_settings['variables']['advagg_js_max_compress_ratio'] = variable_get('advagg_js_max_compress_ratio', ADVAGG_JS_MAX_COMPRESS_RATIO);
+  $aggregate_settings['variables']['advagg_js_compressor_file_settings'] = variable_get('advagg_js_compressor_file_settings', array());
 }
 
 /**
- * Implement hook_advagg_modify_js_pre_render_alter().
+ * Implements hook_advagg_modify_js_pre_render_alter().
  *
  * Used compress inline js.
  */
@@ -103,11 +108,12 @@ function advagg_js_compress_advagg_modify_js_pre_render_alter(&$children, &$elem
 /**
  * Test a file, making sure it is compressible.
  *
- * @param $filename
+ * @param string $filename
  *   Path and filename of the js file to test.
- * @param $compressors
+ * @param array $compressors
  *   List of compressors to test.
- * @return
+ *
+ * @return array
  *   Array showing the results of the compression tests.
  */
 function advagg_js_compress_test_file($filename, $compressors) {
@@ -134,18 +140,42 @@ function advagg_js_compress_test_file($filename, $compressors) {
     }
     // Set to "-2" if compression ratio sucks (it's already compressed).
     if ($ratio < variable_get('advagg_js_compress_ratio', ADVAGG_JS_COMPRESS_RATIO)) {
-      $results[$key] = array('code' => -2, 'ratio' => round($ratio, 5), 'name' => $name);
+      $results[$key] = array(
+        'code' => -2,
+        'ratio' => round($ratio, 5),
+        'name' => $name,
+      );
     }
     // Set to "-3" if the compression ratio is way too good (bad js output).
     elseif ($ratio > variable_get('advagg_js_max_compress_ratio', ADVAGG_JS_MAX_COMPRESS_RATIO)) {
-      $results[$key] = array('code' => -3, 'ratio' => round($ratio, 5), 'name' => $name);
+      $results[$key] = array(
+        'code' => -3,
+        'ratio' => round($ratio, 5),
+        'name' => $name,
+      );
     }
     // Set to "1". Everything worked, mark this file as compressible.
     else {
-      $results[$key] = array('code' => 1, 'ratio' => round($ratio, 5), 'name' => $name);
+      $results[$key] = array(
+        'code' => 1,
+        'ratio' => round($ratio, 5),
+        'name' => $name,
+      );
     }
   }
   return $results;
 }
 
-
+/**
+ * Test a JS file to see if it compresses well; called from httprl background.
+ *
+ * @param string $filename
+ *   Path and filename of JS file.
+ *
+ * @return array
+ *   info about the file.
+ */
+function advagg_js_compress_run_test_httprl($filename) {
+  module_load_include('inc', 'advagg_js_compress', 'advagg_js_compress.advagg');
+  return advagg_js_compress_run_test($filename);
+}

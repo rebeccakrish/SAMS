@@ -1,0 +1,12 @@
+name = Student Athlete Management System
+description = Keeps track of and manages student athlete performance. Created by Penn State students in the college of Information Sciences and Technology.
+core = 7.x
+package = SAMS
+dependencies[] = date
+dependencies[] = date_popup
+dependencies[] = entity
+dependencies[] = entityreference
+
+files[] = sams.admin.inc
+files[] = sams.install
+files[] = sams.module

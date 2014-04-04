@@ -1,0 +1,165 @@
+<?php
+/**
+ *
+ */
+
+/**
+ * Implements hook_menu().
+ *
+ * @author Rebecca Krish
+ */
+function sams_menu() {
+  $items = array();
+
+  $items['admin/sams'] = array(
+    'title' => 'SAMS',
+    'description' => 'Modify settings and administer content associated with SAMS modules.',
+    'page callback' => 'system_admin_menu_block_page',
+    'access arguments' => array('administer sams'),
+    'type' => MENU_NORMAL_ITEM,
+    'file' => 'system.admin.inc',
+    'file path' => drupal_get_path('module', 'system'),
+  );
+  $items['admin/sams/positions/%position/delete'] = array(
+    'title' => 'Delete',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('sams_player_position_form_delete_confirm', 3),
+    'access arguments' => array('administer sams'),
+    'type' => MENU_NORMAL_ITEM,
+    'file' => 'sams.admin.inc',
+  );
+
+  return $items;
+}
+
+
+/**
+ * Implements hook_permission().
+ *
+ * @return array permissions
+ * @author Rebecca Krish
+ */
+function sams_permission() {
+  return array(
+    'administer sams' => array(
+      'title' => t('Administer SAMS'),
+      'description' => t('Administer settings and content associated with SAMS'),
+      'restrict access' => TRUE,
+    ),
+  );
+}
+
+
+/**
+ * Implements hook_entity_info().
+ *
+ * @author Rebecca Krish
+ */
+function sams_entity_info() {
+  return array(
+    'sams_player_position' => array(
+      'label' => t('Player Position'),
+      'entity class' => 'Entity',
+      'controller class' => 'EntityAPIController',
+      'base table' => 'sams_player_position',
+      'fieldable' => TRUE,
+      'entity keys' => array(
+        'id' => 'position_id',
+        'label' => 'title',
+      ),
+      'module' => 'sams',
+      'admin ui' => array(
+        'path' => 'admin/sams/positions',
+        'controller class' => 'EntityDefaultUIController',
+        'file' => 'sams.admin.inc',
+      ),
+      'load_hook' => 'sams_player_position_load',
+      'access callback' => 'sams_player_position_access',
+    ),
+  );
+}
+
+
+/**
+ * Access callback for player positions.
+ */
+function sams_player_position_access($op, $player_position, $account = NULL) {
+  global $user;
+
+  if (!isset($account)) {
+    $account = $user;
+  }
+
+  switch ($op) {
+    case 'add':
+    case 'view':
+    case 'edit':
+    case 'delete':
+      return user_access('administer player positions', $account);
+    default:
+      return user_access('administer player positions', $account);
+  }
+
+}
+
+
+/**
+ * Below contains API functions for all SAMS entities
+ *
+ * Best practice and general advice is to call the API functions when deleting,
+ * saving, or loading any defined entities instead of using the entity member
+ * functions or other valid means [ex. $equipment->save()].
+ *
+ * @see https://drupal.org/node/999938
+ * @author Rebecca Krish
+ */
+
+
+/**
+ * Load a player position.
+ *
+ * @author Rebecca Krish
+ */
+function sams_player_position_load($position_id, $reset = FALSE) {
+  $player_positions = sams_player_position_load_multiple(array($position_id), array(), $reset);
+  return reset($player_positions);
+}
+
+
+/**
+ * Load multiple player positions based on certain conditions.
+ *
+ * @author Rebecca Krish
+ */
+function sams_player_position_load_multiple($player_position_ids = array(), $conditions = array(), $reset = FALSE) {
+  return entity_load('sams_player_position', $player_position_ids, $conditions, $reset);
+}
+
+
+/**
+ * Save a player position.
+ *
+ * @author Rebecca Krish
+ */
+function sams_player_position_save($player_position) {
+  entity_save('sams_player_position', $player_position);
+}
+
+/**
+ * Delete a player position.
+ *
+ * @author Rebecca Krish
+ */
+function sams_player_position_delete($player_position) {
+  entity_delete('sams_player_position', entity_id('sams_player_position', $player_position));
+}
+
+
+/**
+ * Delete multiple player positions.
+ *
+ * @author Rebecca Krish
+ */
+function sams_player_position_delete_multiple($player_position_ids) {
+  entity_delete_multiple('sams_player_position', $player_position_ids);
+}

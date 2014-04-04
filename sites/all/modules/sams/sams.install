@@ -1,0 +1,324 @@
+<?php
+/**
+ *
+ */
+
+/**
+ * Implements hook_schema().
+ *
+ * @author Rebecca Krish
+ */
+function sams_schema() {
+  $schema = array();
+
+  $schema['sams_player_position'] = array(
+    'description' => 'The base table for player positions.',
+    'fields' => array(
+      'position_id' => array(
+        'description' => 'The primary identifier for the player position.',
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'title' => array(
+        'description' => 'The human-readable name of the player position.',
+        'type' => 'varchar',
+        'length' => 255,
+      ),
+      'description' => array(
+        'description' => 'The description of the player position.',
+        'type' => 'text',
+      ),
+    ),
+    'primary key' => array('position_id'),
+  );
+
+  return $schema;
+}
+
+/**
+ * Implements hook_install().
+ *
+ * @author Rebecca Krish
+ */
+function sams_install() {
+  // Create all necessary roles for the module
+  $newRoles = array('Athlete', 'Trainer', 'Coach');
+  $roles = user_roles();
+  foreach ($newRoles as $r){
+    // If the role doesn't already exist...
+    if (!in_array($r, $roles)) {
+      $addRole = new stdClass();
+      $addRole->name = $r;
+      user_role_save($addRole);
+    }
+  }
+
+  $fields = array(
+    'headshot' => array(
+      'label' => 'Player\'s photo.',
+      'field_name' => 'player_photo',
+      'type' => 'image',
+      'settings' => array(
+        'uri_scheme' => 'public',
+        'display_field' => TRUE,
+      ),
+    ),
+    'name' => array(
+      'label' => 'Player\'s Full Name',
+      'field_name' => 'player_full_name',
+      'type' => 'text',
+    ),
+    'height' => array(
+      'label' => 'Player\'s Height',
+      'field_name' => 'player_height',
+      'type' => 'number_integer',
+    ),
+    'weight'=> array(
+      'label' => 'Player Weight',
+      'field_name' => 'player_weight',
+      'type' => 'number_integer',
+    ),
+    'birthdate'=> array(
+      'label' => 'Player\'s date of birth',
+      'field_name' => 'player_birthdate',
+      'type' => 'datestamp',
+      'settings' => array(
+        'granularity' => drupal_map_assoc(array('year', 'month', 'day')),
+        'tz_handling' => 'none',
+      ),
+    ),
+    'position'=> array(
+      'label' => 'Player\'s position(s)',
+      'field_name' => 'player_position',
+      'type' => 'entityreference',
+      'cardinality' => FIELD_CARDINALITY_UNLIMITED,
+      'settings' => array(
+        'target_type' => 'sams_player_position',
+      ),
+    ),
+    'year'=> array(
+      'label' => 'Player\'s semester standing',
+      'field_name' => 'player_year',
+      'type' => 'list_text',
+      'settings' => array(
+        'allowed_values' => array(
+          '1' => 'Freshman (1)',
+          '2' => 'Freshman (2)',
+          '3' => 'Sophmore (3)',
+          '4' => 'Sophmore (4)',
+          '5' => 'Junior (5)',
+          '6' => 'Junior (6)',
+          '7' => 'Senior (7)',
+          '8' => 'Senior (8)',
+        ),
+      ),
+    ),
+    'max_weight'=> array(
+      'label' => 'Player\'s 1 Rep Max Weight',
+      'field_name' => 'player_1rm',
+      'type' => 'number_integer',
+    ),
+    'fat_free_mass'=> array(
+      'label' => 'Player\'s percentage of fat-free body mass',
+      'field_name' => 'player_fat_free_mass',
+      'type' => 'number_decimal',
+    ),
+    'fat_mass'=> array(
+      'label' => 'Player\'s percentage of fat body mass',
+      'field_name' => 'player_fat_mass',
+      'type' => 'number_decimal',
+    ),
+    'deleted'=> array(
+      'label' => 'Date the player became inactive.',
+      'field_name' => 'player_deleted',
+      'type' => 'datestamp',
+    ),
+  );
+
+  field_info_cache_clear();
+  foreach ($fields as $field) {
+    field_create_field($field);
+  }
+
+  $instances = array(
+    'headshot' => array(
+      'field_name' => 'player_photo',
+      'entity_type' => 'user',
+      'bundle' => 'user',
+      'label' => 'Profile Photo',
+      'description' => st('Player\'s profile photo.'),
+      'settings' => array(
+        'file_extensions' => 'png jpg',
+        'description_field' => 1,
+        'display_field' => 1,
+        'uri_scheme' => 'public',
+      ),
+      'display' => array(
+        'default' => array(
+          'weight' => -90,
+        ),
+      ),
+      'widget' => array(
+        'type' => 'image_image',
+      ),
+    ),
+    'name' => array(
+      'field_name' => 'player_full_name',
+      'entity_type' => 'user',
+      'bundle' => 'user',
+      'label' => 'Full name',
+      'description' => st('Player\'s Full Name.'),
+      'display' => array(
+        'default' => array(
+          'weight' => -89,
+        ),
+      ),
+    ),
+    'height' => array(
+      'field_name' => 'player_height',
+      'entity_type' => 'user',
+      'bundle' => 'user',
+      'label' => 'Height',
+      'description' => st('Player\'s Height, in inches.'),
+      'display' => array(
+        'default' => array(
+          'weight' => -88,
+        ),
+      ),
+      'settings' => array(
+        'suffix' => 'inches',
+      ),
+    ),
+    'weight'=> array(
+      'field_name' => 'player_weight',
+      'entity_type' => 'user',
+      'bundle' => 'user',
+      'label' => 'Weight',
+      'description' => st('Player\'s Weight, in pounds.'),
+      'display' => array(
+        'default' => array(
+          'weight' => -87,
+        ),
+      ),
+      'settings' => array(
+        'suffix' => 'lbs',
+      ),
+    ),
+    'birthdate'=> array(
+      'field_name' => 'player_birthdate',
+      'entity_type' => 'user',
+      'bundle' => 'user',
+      'label' => 'Birthdate',
+      'description' => st('Player\'s date of birth.'),
+      'display' => array(
+        'default' => array(
+          'weight' => -86,
+        ),
+      ),
+      'widget' => array(
+        'type' => 'date_popup',
+        'settings' => array(
+          'year_range' => "-60:+0",
+        ),
+      ),
+    ),
+    'position'=> array(
+      'field_name' => 'player_position',
+      'entity_type' => 'user',
+      'bundle' => 'user',
+      'label' => 'Position',
+      'description' => st('Player\'s position title.'),
+      'display' => array(
+        'default' => array(
+          'weight' => -85,
+        ),
+      ),
+      'widget' => array(
+        'type' => 'textfield',
+        'settings' => array('size' => 250),
+      ),
+    ),
+    'year'=> array(
+      'field_name' => 'player_year',
+      'entity_type' => 'user',
+      'bundle' => 'user',
+      'label' => 'Semester Standing',
+      'description' => st('Player\'s semester standing.'),
+      'display' => array(
+        'default' => array(
+          'weight' => -84,
+        ),
+      ),
+    ),
+    'max_weight'=> array(
+      'field_name' => 'player_1rm',
+      'entity_type' => 'user',
+      'bundle' => 'user',
+      'label' => '1 Rep Max',
+      'description' => st('Player\'s 1 Rep Max Weight, in pounds.'),
+      'display' => array(
+        'default' => array(
+          'weight' => -87,
+        ),
+      ),
+      'settings' => array(
+        'suffix' => 'lbs',
+      ),
+    ),
+    'fat_free_mass'=> array(
+      'field_name' => 'player_fat_free_mass',
+      'entity_type' => 'user',
+      'bundle' => 'user',
+      'label' => 'Fat-Free Mass',
+      'description' => st('Player\'s percentage of fat-free body mass'),
+      'display' => array(
+        'default' => array(
+          'weight' => -83,
+        ),
+      ),
+      'settings' => array(
+        'suffix' => '%',
+      ),
+    ),
+    'fat_mass'=> array(
+      'field_name' => 'player_fat_mass',
+      'entity_type' => 'user',
+      'bundle' => 'user',
+      'label' => 'Fat Mass',
+      'description' => st('Player\'s percentage of fat body mass'),
+      'display' => array(
+        'default' => array(
+          'weight' => -82,
+        ),
+      ),
+      'settings' => array(
+        'suffix' => '%',
+      ),
+    ),
+  );
+
+  foreach ($instances as $instance) {
+    field_create_instance($instance);
+  }
+}
+
+/**
+ * Implements hook_uninstall().
+ *
+ * @author Rebecca Krish
+ */
+function sams_uninstall() {
+  field_delete_field('player_photo');
+  field_delete_field('player_full_name');
+  field_delete_field('player_height');
+  field_delete_field('player_weight');
+  field_delete_field('player_birthdate');
+  field_delete_field('player_position');
+  field_delete_field('player_year');
+  field_delete_field('player_fat_free_mass');
+  field_delete_field('player_fat_mass');
+  field_delete_field('player_deleted');
+  field_delete_field('player_1rm');
+  field_purge_batch(100);
+}
